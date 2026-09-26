@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>ぷちっと - 手触り試作</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic UI","Yu Gothic",sans-serif;background:radial-gradient(circle at 20% 10%,rgba(255,130,170,.22),transparent 30%),radial-gradient(circle at 85% 20%,rgba(110,175,255,.22),transparent 32%),radial-gradient(circle at 55% 92%,rgba(120,230,175,.18),transparent 28%),linear-gradient(160deg,#f8fbff,#fff7fb);color:#273449}
+  body{display:flex;justify-content:center;align-items:center}
+  .app{width:min(100vw,620px);height:100%;display:flex;flex-direction:column;padding:calc(10px + env(safe-area-inset-top)) 12px calc(10px + env(safe-area-inset-bottom))}
+  .top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:8px}
+  h1{margin:0;font-size:clamp(28px,8vw,46px);line-height:1;font-weight:950}
+  h1 .p{color:#ff5e84} h1 .u{color:#7f70ff} h1 .c{color:#28c56c}
+  .sub{margin-top:7px;font-size:11px;font-weight:800;opacity:.62}
+  .counter{background:rgba(255,255,255,.86);border:1px solid #fff;border-radius:16px;padding:8px 12px;box-shadow:0 14px 38px rgba(56,78,115,.14);min-width:88px;text-align:center}
+  .counter b{display:block;font-size:22px;line-height:1}.counter span{font-size:9px;font-weight:900;opacity:.5}
+  .stage{position:relative;flex:1;min-height:0;background:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.95);border-radius:30px;padding:8px;overflow:hidden;box-shadow:0 18px 45px rgba(56,78,115,.13)}
+  canvas{display:block;width:100%;height:100%;border-radius:23px;touch-action:none}
+  .tip{margin-top:8px;background:rgba(255,255,255,.86);border:1px solid #fff;border-radius:17px;padding:9px 11px;text-align:center;font-size:10.5px;line-height:1.45;font-weight:800;box-shadow:0 12px 34px rgba(56,78,115,.12)}
+  .tip strong{font-size:11px}
+  .buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  button{border:0;border-radius:15px;padding:10px;font-size:13px;font-weight:900;background:#fff;color:#273449;box-shadow:0 10px 28px rgba(56,78,115,.12);cursor:pointer}
+  button.primary{background:linear-gradient(135deg,#6e8dff,#9a65ff);color:white}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <div>
+      <h1><span class="p">ぷ</span><span class="u">ち</span><span class="c">っ</span>と</h1>
+      <div class="sub">ゲーム性なし。押して、へこんで、ぷちっと潰すだけ。</div>
+    </div>
+    <div class="counter"><b id="count">0</b><span>PUCHI</span></div>
+  </div>
+  <div class="stage"><canvas id="c"></canvas></div>
+  <div class="tip"><strong>押し込むとぷにっ → さらに押すと「ぷちっ」</strong><br>指を滑らせながら連続で潰すこともできます。対応ブラウザでは音・振動あり。</div>
+  <div class="buttons"><button id="soft">やわらかめ</button><button id="reset" class="primary">全部復活</button></div>
+</div>
+<script>
+(() => {
+  const canvas=document.getElementById('c'),ctx=canvas.getContext('2d'),countEl=document.getElementById('count');
+  let audioCtx=null,objects=[],particles=[],ripples=[],popCount=0,pointer={x:0,y:0,down:false,id:null},softness=1;
+  const palette=[[255,88,126],[125,104,255],[46,198,112],[48,151,255],[255,177,74],[255,102,210]];
+  function resize(){const r=canvas.getBoundingClientRect(),dpr=Math.max(1,Math.min(2,devicePixelRatio||1));canvas.width=Math.floor(r.width*dpr);canvas.height=Math.floor(r.height*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);makeObjects(true)}
+  function makeObjects(preserveCount=false){const w=canvas.clientWidth,h=canvas.clientHeight,area=w*h,n=Math.max(18,Math.min(34,Math.round(area/13000)));objects=[];let tries=0;while(objects.length<n&&tries<1500){tries++;const radius=30+Math.random()*18,x=radius+8+Math.random()*Math.max(10,w-radius*2-16),y=radius+8+Math.random()*Math.max(10,h-radius*2-16);let ok=true;for(const o of objects){if(Math.hypot(x-o.x,y-o.y)<radius+o.r-8){ok=false;break}}if(!ok)continue;objects.push({x,y,r:radius,color:palette[Math.floor(Math.random()*palette.length)],alive:true,pressure:0,squash:0,wobble:Math.random()*Math.PI*2,respawnAt:0})}if(!preserveCount){popCount=0;countEl.textContent='0'}}
+  function playPop(size=1){try{if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();const now=audioCtx.currentTime,osc=audioCtx.createOscillator(),gain=audioCtx.createGain();osc.type='sine';osc.frequency.setValueAtTime(150+80*size,now);osc.frequency.exponentialRampToValueAtTime(55,now+.085);gain.gain.setValueAtTime(.055,now);gain.gain.exponentialRampToValueAtTime(.001,now+.09);osc.connect(gain);gain.connect(audioCtx.destination);osc.start(now);osc.stop(now+.1);const buf=audioCtx.createBuffer(1,audioCtx.sampleRate*.045,audioCtx.sampleRate),data=buf.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=(Math.random()*2-1)*(1-i/data.length);const src=audioCtx.createBufferSource(),ng=audioCtx.createGain();src.buffer=buf;ng.gain.value=.018;src.connect(ng);ng.connect(audioCtx.destination);src.start(now)}catch(e){}}
+  function vibrate(){try{navigator.vibrate&&navigator.vibrate([12,18,10])}catch(e){}}
+  function drawBlob(o){const[R,G,B]=o.color,t=performance.now()/1000;o.wobble+=.018;const wob=Math.sin(o.wobble+t*1.3)*.015,sx=1+o.squash*.42+wob,sy=1-o.squash*.48-wob*.5;ctx.save();ctx.translate(o.x,o.y);ctx.scale(sx,sy);const rr=o.r,grad=ctx.createRadialGradient(-rr*.28,-rr*.36,rr*.08,0,0,rr*1.05);grad.addColorStop(0,'rgba(255,255,255,.96)');grad.addColorStop(.15,`rgba(${Math.min(255,R+70)},${Math.min(255,G+70)},${Math.min(255,B+70)},.96)`);grad.addColorStop(.62,`rgba(${R},${G},${B},.82)`);grad.addColorStop(1,`rgba(${Math.max(0,R-55)},${Math.max(0,G-55)},${Math.max(0,B-55)},.72)`);ctx.shadowColor=`rgba(${R},${G},${B},.32)`;ctx.shadowBlur=18+o.pressure*10;ctx.fillStyle=grad;ctx.beginPath();ctx.arc(0,0,rr,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='rgba(255,255,255,.5)';ctx.beginPath();ctx.ellipse(-rr*.25,-rr*.33,rr*.22,rr*.11,-.6,0,Math.PI*2);ctx.fill();if(o.pressure>0){ctx.globalAlpha=Math.min(.28,o.pressure*.4);ctx.fillStyle='rgba(40,50,80,.32)';ctx.beginPath();ctx.ellipse(0,0,rr*.25*(1+o.pressure),rr*.16*(1+o.pressure),0,0,Math.PI*2);ctx.fill()}ctx.restore()}
+  function pop(o){if(!o.alive)return;o.alive=false;popCount++;countEl.textContent=popCount;playPop(o.r/48);vibrate();const[R,G,B]=o.color;for(let i=0;i<24;i++){const a=Math.random()*Math.PI*2,sp=1.4+Math.random()*3.6;particles.push({x:o.x,y:o.y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:.8+Math.random()*.25,size:2+Math.random()*4,color:`rgba(${R},${G},${B},.9)`})}ripples.push({x:o.x,y:o.y,r:o.r*.35,life:1,color:`rgba(${R},${G},${B},.9)`});o.respawnAt=performance.now()+1800+Math.random()*900}
+  function pressureObject(o,amount){if(!o.alive)return;o.pressure=Math.min(1,o.pressure+amount*softness);o.squash=Math.min(1,o.squash+amount*1.15*softness);if(o.pressure>=.88)pop(o)}
+  function update(){const now=performance.now();for(const o of objects){if(!o.alive&&o.respawnAt&&now>=o.respawnAt){o.alive=true;o.pressure=0;o.squash=0;o.respawnAt=0}if(o.alive){if(!pointer.down)o.pressure*=.84;o.squash*=.84}}if(pointer.down){for(const o of objects){if(!o.alive)continue;const d=Math.hypot(pointer.x-o.x,pointer.y-o.y);if(d<o.r*1.06){const closeness=1-d/(o.r*1.06);pressureObject(o,.055+closeness*.08)}}}for(const p of particles){p.x+=p.vx;p.y+=p.vy;p.vy+=.05;p.vx*=.99;p.life-=.025}particles=particles.filter(p=>p.life>0);for(const r of ripples){r.r+=3.4;r.life-=.035}ripples=ripples.filter(r=>r.life>0)}
+  function render(){ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight);for(const r of ripples){ctx.save();ctx.globalAlpha=r.life*.6;ctx.strokeStyle=r.color;ctx.lineWidth=3;ctx.beginPath();ctx.arc(r.x,r.y,r.r,0,Math.PI*2);ctx.stroke();ctx.restore()}for(const o of objects){if(o.alive)drawBlob(o);else if(o.respawnAt){const remain=Math.max(0,(o.respawnAt-performance.now())/2200);ctx.save();ctx.globalAlpha=.08+remain*.08;ctx.fillStyle='rgba(70,90,120,.25)';ctx.beginPath();ctx.arc(o.x,o.y,o.r*.55,0,Math.PI*2);ctx.fill();ctx.restore()}}for(const p of particles){ctx.save();ctx.globalAlpha=p.life;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();ctx.restore()}}
+  function loop(){update();render();requestAnimationFrame(loop)}
+  function point(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
+  canvas.addEventListener('pointerdown',e=>{e.preventDefault();const p=point(e);pointer.x=p.x;pointer.y=p.y;pointer.down=true;pointer.id=e.pointerId;canvas.setPointerCapture?.(e.pointerId);for(const o of objects){if(o.alive&&Math.hypot(pointer.x-o.x,pointer.y-o.y)<o.r*1.05)pressureObject(o,.12)}})
+  canvas.addEventListener('pointermove',e=>{if(pointer.id!==null&&e.pointerId!==pointer.id)return;const p=point(e);pointer.x=p.x;pointer.y=p.y})
+  function endPointer(e){if(pointer.id!==null&&e.pointerId!==pointer.id)return;pointer.down=false;pointer.id=null}
+  canvas.addEventListener('pointerup',endPointer);canvas.addEventListener('pointercancel',endPointer);canvas.addEventListener('pointerleave',e=>{if(e.buttons===0)endPointer(e)})
+  document.getElementById('reset').onclick=()=>makeObjects(false)
+  document.getElementById('soft').onclick=()=>{softness=softness===1?1.55:1;document.getElementById('soft').textContent=softness>1?'標準の硬さ':'やわらかめ'}
+  window.addEventListener('resize',resize);resize();loop();
+})();
+</script>
+</body>
+</html>
